@@ -11,8 +11,7 @@ pub enum MotorId {
 }
 
 pub struct Encoders {
-    _program_left: InstalledProgram<PIO0>,
-    _program_right: InstalledProgram<PIO0>,
+    _program: InstalledProgram<PIO0>,
     _left_sm: StateMachine<(PIO0, hal::pio::SM0), hal::pio::Running>,
     _right_sm: StateMachine<(PIO0, hal::pio::SM1), hal::pio::Running>,
     left_rx: Rx<(PIO0, hal::pio::SM0)>,
@@ -52,7 +51,6 @@ impl Encoders {
             0x8020, // 10: push
         ];
         
-        // Correctly initialize a 32-capacity ArrayVec and load the 11 instructions.
         let mut code = ArrayVec::<u16, 32>::new();
         for &instr in program_data.iter() {
             let _ = code.push(instr);
@@ -65,18 +63,19 @@ impl Encoders {
             side_set: pio::SideSet::new(false, 0, false),
         };
 
-        let installed_left = pio.install(&program).unwrap();
-        let installed_right = pio.install(&program).unwrap();
+        // Install the program once
+        let installed = pio.install(&program).unwrap();
         
+        // Share the installed program between both state machines
         // Left Encoder: GP12, GP13
-        let (mut left_sm, left_rx, _) = hal::pio::PIOBuilder::from_installed_program(unsafe { installed_left.share() })
+        let (mut left_sm, left_rx, _) = hal::pio::PIOBuilder::from_installed_program(unsafe { installed.share() })
             .in_pin_base(12) 
             .in_shift_direction(hal::pio::ShiftDirection::Left)
             .clock_divisor_fixed_point(100, 0)
             .build(sm0);
             
         // Right Encoder: GP8, GP9
-        let (mut right_sm, right_rx, _) = hal::pio::PIOBuilder::from_installed_program(unsafe { installed_right.share() })
+        let (mut right_sm, right_rx, _) = hal::pio::PIOBuilder::from_installed_program(unsafe { installed.share() })
             .in_pin_base(8)
             .in_shift_direction(hal::pio::ShiftDirection::Left)
             .clock_divisor_fixed_point(100, 0)
@@ -86,8 +85,7 @@ impl Encoders {
         right_sm.set_pindirs([(8, PinDir::Input), (9, PinDir::Input)]);
         
         Self {
-            _program_left: installed_left,
-            _program_right: installed_right,
+            _program: installed,
             _left_sm: left_sm.start(),
             _right_sm: right_sm.start(),
             left_rx,
