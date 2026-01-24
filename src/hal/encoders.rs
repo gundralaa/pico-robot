@@ -3,6 +3,7 @@ use hal::pio::{UninitStateMachine, StateMachine, PIO, PinDir, Rx, InstalledProgr
 use hal::gpio::{Pin, FunctionPio0, PullUp, bank0::{Gpio8, Gpio9, Gpio12, Gpio13}};
 use hal::pac::PIO0;
 use defmt::info;
+use pio::ArrayVec;
 
 pub enum MotorId {
     Left,
@@ -37,7 +38,6 @@ impl Encoders {
         _left_pins: (Pin<Gpio12, FunctionPio0, PullUp>, Pin<Gpio13, FunctionPio0, PullUp>),
         _right_pins: (Pin<Gpio8, FunctionPio0, PullUp>, Pin<Gpio9, FunctionPio0, PullUp>),
     ) -> Self {
-        // Reverting to hardcoded hex to remove pio-proc dependency while keeping the logic fixes.
         let program_data = [
             0xe03f, // 0: set x, 31       (Heartbeat)
             0xa0c1, // 1: mov isr, x
@@ -52,13 +52,15 @@ impl Encoders {
             0x8020, // 10: push
         ];
         
+        // Correctly initialize a 32-capacity ArrayVec and load the 11 instructions.
+        let mut code = ArrayVec::<u16, 32>::new();
+        for &instr in program_data.iter() {
+            let _ = code.push(instr);
+        }
+
         let program = pio::Program {
-            code: {
-                let mut instr = [0u16; 32];
-                instr[..11].copy_from_slice(&program_data);
-                instr.into()
-            },
-            origin: None, // Removing origin 0 to avoid relocation issues
+            code,
+            origin: None,
             wrap: pio::Wrap { source: 10, target: 4 },
             side_set: pio::SideSet::new(false, 0, false),
         };
@@ -121,6 +123,7 @@ impl Encoders {
     }
 
     pub fn update(&mut self) {
+        Self::update_single(&mut self.left_rx, &mut self.left_count, &mut self.last_left_state, "Left");
         Self::update_single(&mut self.right_rx, &mut self.right_count, &mut self.last_right_state, "Right");
     }
 
