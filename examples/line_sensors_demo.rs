@@ -28,7 +28,7 @@ mod app {
 
     #[init]
     fn init(cx: init::Context) -> (Shared, Local) {
-        info!("Line Sensors Demo Init");
+        info!("Line Sensors Calibration Demo Init");
 
         let pac = cx.device;
         let mut resets = pac.RESETS;
@@ -50,11 +50,11 @@ mod app {
         let pins = bsp::Pins::new(pac.IO_BANK0, pac.PADS_BANK0, sio.gpio_bank0, &mut resets);
 
         let sensors = LineSensors::new(
-            pins.gpio16,
-            pins.gpio17,
-            pins.gpio18,
-            pins.gpio19,
+            pins.gpio22,
+            pins.gpio21,
             pins.gpio20,
+            pins.gpio19,
+            pins.gpio18,
             pins.gpio26,
         );
 
@@ -62,22 +62,36 @@ mod app {
         Mono::start(pac.TIMER, &mut resets);
 
         // Spawn task
-        sensor_read::spawn().ok();
+        sensor_task::spawn().ok();
 
         (Shared {}, Local { sensors })
     }
 
     #[task(local = [sensors])]
-    async fn sensor_read(cx: sensor_read::Context) {
+    async fn sensor_task(cx: sensor_task::Context) {
         let sensors = cx.local.sensors;
         
         // Enable emitters
         sensors.enable_emitters();
-        Mono::delay(2.millis()).await; // Wait for emitters to stabilize
+        Mono::delay(2.millis()).await;
 
+        // --- Calibration Phase ---
+        info!("Starting Calibration (10 seconds)...");
+        info!("Move the robot over white and black surfaces.");
+        
+        // Loop for approximately 500 samples (500 * 20ms = 10s)
+        for _ in 0..500 {
+            sensors.calibrate();
+            Mono::delay(20.millis()).await;
+        }
+        
+        info!("Calibration Complete!");
+
+        // --- Main Loop ---
         loop {
-            let values = sensors.read();
-            info!("Sensors: {}, {}, {}, {}, {}", values[0], values[1], values[2], values[3], values[4]);
+            let calibrated = sensors.read_calibrated();
+            info!("Calibrated: 1:{}, 2:{}, 3:{}, 4:{}, 5:{}", 
+                calibrated[0], calibrated[1], calibrated[2], calibrated[3], calibrated[4]);
             
             Mono::delay(100.millis()).await;
         }
