@@ -122,6 +122,6 @@ impl Encoders {
     pub fn get_counts(&mut self) -> (i32, i32) {
         let left = Self::read_latest(&mut self.left_rx);
         let right = Self::read_latest(&mut self.right_rx);
-        (left, right)
+        (-left, -right)
     }
 }

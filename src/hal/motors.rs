@@ -44,18 +44,18 @@ impl Motors {
             MotorId::Left => {
                 // Left Motor is on Channel B
                 if speed >= 0.0 {
-                    let _ = self.left_dir.set_low();
-                } else {
                     let _ = self.left_dir.set_high();
+                } else {
+                    let _ = self.left_dir.set_low();
                 }
                 self.pwm.channel_b.set_duty(duty);
             }
             MotorId::Right => {
                 // Right Motor is on Channel A
                 if speed >= 0.0 {
-                    let _ = self.right_dir.set_low();
-                } else {
                     let _ = self.right_dir.set_high();
+                } else {
+                    let _ = self.right_dir.set_low();
                 }
                 self.pwm.channel_a.set_duty(duty);
             }

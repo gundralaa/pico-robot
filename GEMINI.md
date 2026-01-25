@@ -56,3 +56,7 @@ The project uses the `defmt` crate for logging. `defmt` provides a flexible and 
 -   `Cargo.toml`: Defines project dependencies, features, and metadata.
 -   `.cargo/config.toml`: Contains build and runner configurations.
 -   `memory.x`: A linker script that defines the memory layout for the target device.
+
+### Guidelines
+
+Search the web for existing solutions and libraries before implementing new drivers for hardware.

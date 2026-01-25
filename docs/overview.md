@@ -60,6 +60,14 @@ The project will be organized into the following modules within `src/hal/`:
     - **Reliability**: This method eliminates race conditions and prevents dropped pulses that can occur with CPU-based polling, especially at high speeds.
     - `get_counts() -> (i32, i32)`: Returns the current net counts for both motors.
 
+### 3.3. `closed_loop_motors.rs`
+- **Responsibility:** Maintain constant wheel velocity using encoder feedback.
+- **Implementation:**
+    - **PID Controller**: Implements a Proportional-Integral-Derivative (PID) controller for each motor.
+    - **Integration**: Ingests both `Motors` and `Encoders` modules.
+    - **Velocity Control**: Calculates current velocity from encoder deltas and adjusts PWM output to match a target setpoint (counts/sec).
+    - `update_velocity(left_target: f32, right_target: f32, dt: f32)`: Main entry point for the control loop.
+
 ### 3.3. `line_sensors.rs`
 - **Responsibility:** Read the 5 reflectance sensors.
 - **Implementation:**

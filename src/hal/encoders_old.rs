@@ -123,8 +123,8 @@ impl Encoders {
 
     pub fn get_counts(&self, motor: MotorId) -> i32 {
         match motor {
-            MotorId::Left => self.left_count,
-            MotorId::Right => self.right_count,
+            MotorId::Left => -self.left_count,
+            MotorId::Right => -self.right_count,
         }
     }
 }
