@@ -25,17 +25,7 @@ Ensure that `.cargo/config.toml` is configured for your debug probe. The default
 runner = "probe-rs run --chip RP2040 --protocol swd"
 ```
 
-## Building and Running
-
-### Main Application
-
-To build and run the main application (`src/main.rs`):
-
-```bash
-cargo run --release
-```
-
-### Flashing Examples
+## Running Examples
 
 To flash and run a specific example from the `examples/` directory, use the `--example` flag:
 
@@ -43,26 +33,53 @@ To flash and run a specific example from the `examples/` directory, use the `--e
 cargo run --release --example <example_name>
 ```
 
-For example, to run the motors demo:
-
-```bash
-cargo run --release --example motors_demo
-```
-
-## Available Examples
+### Available Examples
 
 | Example | Description |
 | :--- | :--- |
 | `motors_demo` | Basic motor control (forward, backward, stop) |
-| `encoders_demo` | Reading wheel encoders via PIO (Legacy) |
-| `encoders_hw_demo` | High-performance asynchronous encoder tracking |
+| `encoders_demo` | Reading wheel encoders via PIO (Software Decoding) |
+| `encoders_hw_demo` | High-performance asynchronous encoder tracking (Hardware Decoding) |
+| `target_velocity_demo` | PID-controlled constant velocity using encoder feedback |
+| `line_sensors_demo` | Calibrating and reading the 5-channel reflectance sensor array |
+| `line_following_demo` | Full line-following application with calibration and PID steering |
 | `leds_demo` | Controlling the RGB LEDs |
 | `leds_off` | Utility to turn off all RGB LEDs |
 | `display_demo` | Using the OLED display with `embedded-graphics` |
 | `imu_demo` | Reading data from the onboard IMU |
-| `target_velocity_demo` | Closed-loop velocity control example |
-| `line_following_demo` | Line following implementation |
+| `blink_led` | Basic blinky example (migrated from main) |
+
+## Hardware Modules
+
+The project provides high-level drivers for the robot's subsystems in `src/hal/`.
+
+| Module | Description | Key Features |
+| :--- | :--- | :--- |
+| `motors` | Dual DC Motor Control | PWM speed control, Direction handling |
+| `encoders` | Quadrature Encoders | PIO-based hardware counting, Zero CPU overhead |
+| `closed_loop_motors` | Velocity Control | PID controller integration for constant speed |
+| `line_sensors` | Reflectance Array | 5-channel RC timing, Calibration, Scaled output |
+| `display` | OLED Screen | SH1106 driver, `embedded-graphics` integration |
+| `leds` | RGB LEDs | APA102 (DotStar) driver via SPI |
+| `imu` | Inertial Sensors | Accelerometer and Gyroscope access |
 
 ## Logging
 
-This project uses `defmt` for logging. When running with `probe-rs`, the logs will be displayed in your terminal.
+This project uses `defmt` for efficient logging. When running with `probe-rs`, logs are automatically displayed in your terminal.
+
+### Log Levels
+You can set the log level at runtime by setting the `DEFMT_LOG` environment variable:
+
+```bash
+DEFMT_LOG=trace cargo run --release --example target_velocity_demo
+```
+
+Available levels: `error`, `warn`, `info`, `debug`, `trace`.
+
+### Macros
+Use these macros in your code to print logs:
+-   `error!("Error message")`
+-   `warn!("Warning message")`
+-   `info!("Info message")`
+-   `debug!("Debug message")`
+-   `trace!("Trace message")`
