@@ -7,7 +7,7 @@ use panic_probe as _;
 
 use bsp::hal;
 use rp_pico as bsp;
-use picorobot::hal::encoders::{Encoders, MotorId};
+use picorobot::hal::encoders_old::{Encoders, MotorId};
 
 // RTIC Monotonics
 use rtic_monotonics::rp2040::prelude::*;

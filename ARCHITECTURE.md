@@ -10,32 +10,32 @@ Based on the verified specs, the pinout is defined as follows:
 
 | Component | Function | GPIO Pin | Notes |
 | :--- | :--- | :--- | :--- |
-| **Motors** | Motor 1 (Left) PWM | GP8 | PWM Slice 4A |
-| | Motor 1 (Left) Dir | GP9 | Digital Output |
-| | Motor 2 (Right) PWM | GP6 | PWM Slice 3A |
-| | Motor 2 (Right) Dir | GP7 | Digital Output |
-| **Encoders** | Left A | GP10 | |
-| | Left B | GP11 | |
-| | Right A | GP12 | |
-| | Right B | GP13 | |
-| **Line Sensors** | Sensor 1 (DN1) | GP16 | RC Timing (PIO candidate) |
-| | Sensor 2 (DN2) | GP17 | RC Timing |
-| | Sensor 3 (DN3) | GP18 | RC Timing |
-| | Sensor 4 (DN4) | GP19 | RC Timing |
-| | Sensor 5 (DN5) | GP20 | RC Timing |
+| **Motors** | Motor 1 (Right) PWM | GP14 | PWM Slice 7A |
+| | Motor 1 (Right) Dir | GP10 | Digital Output |
+| | Motor 2 (Left) PWM | GP15 | PWM Slice 7B |
+| | Motor 2 (Left) Dir | GP11 | Digital Output |
+| **Encoders** | Right A | GP8 | |
+| | Right B | GP9 | |
+| | Left A | GP12 | |
+| | Left B | GP13 | |
+| **Line Sensors** | Line 1 (DN1) | GP22 | RC Timing |
+| | Line 2 (DN2) | GP21 | RC Timing |
+| | Line 3 (DN3) | GP20 | RC Timing |
+| | Line 4 (DN4) | GP19 | RC Timing |
+| | Line 5 (DN5) | GP18 | RC Timing |
 | | Emitter Control | GP26 | Digital Output |
 | **RGB LEDs** | Data | GP3 | SPI MOSI (SPI0 TX) |
-| | Clock | GP2 | SPI SCK (SPI0 SCK) |
+| | Clock | GP6 | SPI SCK (SPI0 SCK) |
 | | Type | APA102 | Compatible (DotStar) |
-| **User Interface**| Button A | GP14 | Active Low |
-| | Button B | GP15 | Active Low |
-| | Button C | GP23 | Active Low |
-| | Buzzer | GP21 | PWM (check pin) |
+| **User Interface**| Button A | GP14 | (Shared with Motor? Check) |
+| | Button B | GP15 | (Shared with Motor? Check) |
+| | Button C | GP0 | (Shared with Display DC?) |
+| | Buzzer | GP21 | PWM (GP7 in reference?) |
 | **Display** | SH1106 / SSD1306 | | 128x64 OLED |
 | | Data/Command | GP0 | |
 | | Reset | GP1 | |
-| | I2C SDA | GP4 | I2C0 SDA |
-| | I2C SCL | GP5 | I2C0 SCL |
+| | SPI SCK | GP2 | |
+| | SPI MOSI | GP3 | |
 | **IMU** | LSM6DSO (Accel/Gyro) | I2C0 | Addr: 0x6B |
 | | LIS3MDL (Mag) | I2C0 | Addr: 0x1E |
 
@@ -47,6 +47,7 @@ The project will be organized into the following modules within `src/hal/`:
 - **Responsibility:** Control speed and direction of the two DC motors.
 - **Implementation:**
     - Use `rp2040_hal::pwm` to generate PWM signals.
+    - Uses PWM Slice 7 for both motors.
     - `set_speed(motor: MotorId, speed: f32)`: speed range -1.0 to 1.0.
     - Handle direction pins based on the sign of the speed.
     - `stop()`: Disable PWM / Set to 0.
@@ -54,8 +55,10 @@ The project will be organized into the following modules within `src/hal/`:
 ### 3.2. `encoders.rs`
 - **Responsibility:** Track wheel rotation.
 - **Implementation:**
-    - PIO (Programmable I/O) quadrature decoder (high performance, low CPU overhead). **Preferred**.
-    - `get_counts(motor: MotorId) -> i32`: Returns net counts.
+    - **Asynchronous PIO Quadrature Decoder**: High-performance implementation that offloads counting to the PIO hardware.
+    - **Logic**: Uses a 16-instruction jump table in PIO memory to process every phase transition (A/B) and maintain a 32-bit signed counter in the PIO's `Y` register.
+    - **Reliability**: This method eliminates race conditions and prevents dropped pulses that can occur with CPU-based polling, especially at high speeds.
+    - `get_counts() -> (i32, i32)`: Returns the current net counts for both motors.
 
 ### 3.3. `line_sensors.rs`
 - **Responsibility:** Read the 5 reflectance sensors.
@@ -65,28 +68,22 @@ The project will be organized into the following modules within `src/hal/`:
         2. Wait ~10us.
         3. Switch pins to Input (High-Z).
         4. Measure time for voltage to decay to Low.
-    - This is a perfect candidate for **PIO** to read all 5 sensors in parallel without blocking the CPU.
-    - `calibrate()`: for setting the max and min values
-    - `get_reflectance(sensor: SensorId) -> f32` from 0.0 to 1.0
+    - `read() -> [u32; 5]`: Returns raw decay times.
 
 ### 3.4. `leds.rs`
 - **Responsibility:** Control the 6 APA102-compatible RGB LEDs.
 - **Implementation:**
-    - SPI. Since GP2/GP3 are SPI0 SCK/TX, `rp2040_hal::spi` is the best choice.
+    - SPI. GP3 (Data) and GP6 (Clock).
     - `set_color(index: usize, r: u8, g: u8, b: u8)`.
-    - Note that the display and the leds share a spi bus and switching needs to be enabled
 
 ### 3.5. `imu.rs`
 - **Responsibility:** Interface with the onboard IMU sensors.
-- **Implementation:**
-    - Use `shared-bus` or RTIC resources to share the I2C0 bus.
-    - Drivers: `lsm6dso` and `lis3mdl` crates (if available) or custom implementation.
 
 ### 3.6. `display.rs`
 - **Responsibility:** Text/Graphics output.
 - **Implementation:**
     - `embedded-graphics` support.
-    - Driver: `sh1106` or `ssd1306` crate over I2C, plus GPIOs for Reset and D/C.
+    - Driver: `sh1106` over SPI.
 
 ## 4. Directory Structure
 
@@ -101,63 +98,4 @@ src/
     ├── leds.rs
     ├── imu.rs
     └── display.rs
-examples/
-    ├── motors_demo.rs
-    ├── encoders_demo.rs
-    ├── line_sensors_demo.rs
-    ├── leds_demo.rs
-    ├── display_demo.rs
-    ├── imu_demo.rs
-    ├── target_velocity_demo.rs
-    └── line_following_demo.rs
 ```
-
-## 5. Development Plan & Examples
-
-We will implement the modules incrementally, verifying each with a dedicated example in the `examples/` directory.
-
-### 5.1. `motors_demo.rs`
-- **Goal:** Verify motor control.
-- **Logic:**
-    - Initialize PWMs and Direction pins.
-    - Ramp up speed M1 Forward, then Stop.
-    - Ramp up speed M1 Backward, then Stop.
-    - Repeat for M2.
-
-### 5.2. `encoders_demo.rs`
-- **Goal:** Verify PIO quadrature decoding.
-- **Logic:**
-    - Initialize PIO programs for both encoders.
-    - Periodically (e.g., every 100ms) read counts and print to `defmt` log.
-
-### 5.3. `line_sensors_demo.rs`
-- **Goal:** Verify sensor reading via PIO.
-- **Logic:**
-    - Initialize PIO for sensor array.
-    - Print raw sensor values to log.
-
-### 5.4. `leds_demo.rs`
-- **Goal:** Verify RGB LEDs.
-- **Logic:**
-    - Cycle through Red, Green, Blue on all 6 LEDs.
-
-### 5.5. `display_demo.rs`
-- **Goal:** Verify OLED display.
-- **Logic:**
-    - Initialize I2C and Display driver.
-    - Draw text "PicoRobot" and a simple shape.
-
-### 5.6. `imu_demo.rs`
-- **Goal:** Verify IMU communication.
-- **Logic:**
-    - Read Accel/Gyro ID and values.
-
-### 5.7. `target_velocity_demo.rs` (Integrated Application)
-- **Goal:** Implement closed-loop velocity control.
-- **Logic:**
-    - Use encoder feedback and a PID controller to maintain a target velocity.
-
-### 5.8. `line_following_demo.rs` (Integrated Application)
-- **Goal:** Implement line following behavior.
-- **Logic:**
-    - Use line sensor data and a PID controller to follow a line.

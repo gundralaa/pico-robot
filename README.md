@@ -54,8 +54,8 @@ cargo run --release --example motors_demo
 | Example | Description |
 | :--- | :--- |
 | `motors_demo` | Basic motor control (forward, backward, stop) |
-| `encoders_demo` | Reading wheel encoders via PIO |
-| `line_sensors_demo` | Reading line sensors via PIO |
+| `encoders_demo` | Reading wheel encoders via PIO (Legacy) |
+| `encoders_hw_demo` | High-performance asynchronous encoder tracking |
 | `leds_demo` | Controlling the RGB LEDs |
 | `leds_off` | Utility to turn off all RGB LEDs |
 | `display_demo` | Using the OLED display with `embedded-graphics` |
