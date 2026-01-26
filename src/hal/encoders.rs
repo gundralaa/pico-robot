@@ -10,12 +10,47 @@ pub enum MotorId {
     Right,
 }
 
-pub struct Encoders {
+pub trait EncoderRx {
+    fn read(&mut self) -> Option<u32>;
+}
+
+impl<T: ValidStateMachine> EncoderRx for Rx<T> {
+    fn read(&mut self) -> Option<u32> {
+        self.read()
+    }
+}
+
+pub struct GenericEncoders<L, R, K = ()> {
+    pub left_rx: L,
+    pub right_rx: R,
+    pub _keep_alive: K,
+}
+
+pub struct EncodersKeepAlive {
     _program: InstalledProgram<PIO0>,
     _left_sm: StateMachine<(PIO0, hal::pio::SM0), hal::pio::Running>,
     _right_sm: StateMachine<(PIO0, hal::pio::SM1), hal::pio::Running>,
-    left_rx: Rx<(PIO0, hal::pio::SM0)>,
-    right_rx: Rx<(PIO0, hal::pio::SM1)>,
+}
+
+pub type Encoders = GenericEncoders<Rx<(PIO0, hal::pio::SM0)>, Rx<(PIO0, hal::pio::SM1)>, EncodersKeepAlive>;
+
+impl<L: EncoderRx, R: EncoderRx, K> GenericEncoders<L, R, K> {
+    /// Read the latest count from the PIO.
+    /// This is non-blocking and returns the most recent value in the FIFO.
+    fn read_latest(rx: &mut impl EncoderRx) -> i32 {
+        let mut count = None;
+        // TODO: use a match method here in order to avoid blocking
+        while let Some(val) = rx.read() {
+            count = Some(val as i32);
+        }
+        count.unwrap_or(0) // Note: In a real app, you'd store and return the last known value
+    }
+
+    pub fn get_counts(&mut self) -> (i32, i32) {
+        let left = Self::read_latest(&mut self.left_rx);
+        let right = Self::read_latest(&mut self.right_rx);
+        (-left, -right)
+    }
 }
 
 impl Encoders {
@@ -100,28 +135,74 @@ impl Encoders {
         info!("Encoders (HW): Starting PIO state machines at offset {}", installed.offset());
         
         Self {
-            _program: installed,
-            _left_sm: left_sm.start(),
-            _right_sm: right_sm.start(),
+            _keep_alive: EncodersKeepAlive {
+                _program: installed,
+                _left_sm: left_sm.start(),
+                _right_sm: right_sm.start(),
+            },
             left_rx,
             right_rx,
         }
     }
+}
 
-    /// Read the latest count from the PIO. 
-    /// This is non-blocking and returns the most recent value in the FIFO.
-    fn read_latest<T: ValidStateMachine>(rx: &mut Rx<T>) -> i32 {
-        let mut count = None;
-        // TODO: use a match method here in order to avoid blocking
-        while let Some(val) = rx.read() {
-            count = Some(val as i32);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::collections::VecDeque;
+
+    #[derive(Clone)]
+    struct MockRxHandle(Rc<RefCell<VecDeque<u32>>>);
+
+    impl MockRxHandle {
+        fn new() -> Self {
+            Self(Rc::new(RefCell::new(VecDeque::new())))
         }
-        count.unwrap_or(0) // Note: In a real app, you'd store and return the last known value
+
+        fn push(&self, value: u32) {
+            self.0.borrow_mut().push_back(value);
+        }
     }
 
-    pub fn get_counts(&mut self) -> (i32, i32) {
-        let left = Self::read_latest(&mut self.left_rx);
-        let right = Self::read_latest(&mut self.right_rx);
-        (-left, -right)
+    impl EncoderRx for MockRxHandle {
+        fn read(&mut self) -> Option<u32> {
+            self.0.borrow_mut().pop_front()
+        }
+    }
+
+    #[test]
+    fn test_get_counts() {
+        let left_rx = MockRxHandle::new();
+        let right_rx = MockRxHandle::new();
+
+        let mut encoders = GenericEncoders {
+            left_rx: left_rx.clone(),
+            right_rx: right_rx.clone(),
+            _keep_alive: (),
+        };
+
+        // Nothing to read
+        let (left, right) = encoders.get_counts();
+        assert_eq!(left, 0);
+        assert_eq!(right, 0);
+
+        // Push some data
+        left_rx.push(100);
+        left_rx.push(101); // Last one is 101
+
+        right_rx.push(50);
+        right_rx.push(51); // Last one is 51
+
+        let (left, right) = encoders.get_counts();
+        // get_counts returns negative values
+        assert_eq!(left, -101);
+        assert_eq!(right, -51);
+
+        // FIFO drained
+        let (left, right) = encoders.get_counts();
+        assert_eq!(left, 0);
+        assert_eq!(right, 0);
     }
 }
