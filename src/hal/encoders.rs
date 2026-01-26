@@ -1,9 +1,18 @@
 use rp2040_hal as hal;
-use hal::pio::{UninitStateMachine, StateMachine, PIO, PinDir, Rx, InstalledProgram, ValidStateMachine};
+#[cfg(not(test))]
+use hal::pio::{UninitStateMachine, StateMachine, PIO, PinDir, InstalledProgram};
+use hal::pio::{Rx, ValidStateMachine};
+#[cfg(not(test))]
 use hal::gpio::{Pin, FunctionPio0, PullUp, bank0::{Gpio8, Gpio9, Gpio12, Gpio13}};
+#[cfg(not(test))]
 use hal::pac::PIO0;
+#[cfg(not(test))]
 use defmt::info;
+#[cfg(not(test))]
 use pio_proc::pio_asm;
+
+#[cfg(test)]
+use self::mocks::MockRxHandle;
 
 pub enum MotorId {
     Left,
@@ -20,40 +29,27 @@ impl<T: ValidStateMachine> EncoderRx for Rx<T> {
     }
 }
 
-pub struct GenericEncoders<L, R, K = ()> {
-    pub left_rx: L,
-    pub right_rx: R,
-    pub _keep_alive: K,
-}
-
-pub struct EncodersKeepAlive {
+pub struct Encoders {
+    #[cfg(not(test))]
     _program: InstalledProgram<PIO0>,
+    #[cfg(not(test))]
     _left_sm: StateMachine<(PIO0, hal::pio::SM0), hal::pio::Running>,
+    #[cfg(not(test))]
     _right_sm: StateMachine<(PIO0, hal::pio::SM1), hal::pio::Running>,
-}
 
-pub type Encoders = GenericEncoders<Rx<(PIO0, hal::pio::SM0)>, Rx<(PIO0, hal::pio::SM1)>, EncodersKeepAlive>;
+    #[cfg(not(test))]
+    left_rx: Rx<(PIO0, hal::pio::SM0)>,
+    #[cfg(test)]
+    pub left_rx: MockRxHandle,
 
-impl<L: EncoderRx, R: EncoderRx, K> GenericEncoders<L, R, K> {
-    /// Read the latest count from the PIO.
-    /// This is non-blocking and returns the most recent value in the FIFO.
-    fn read_latest(rx: &mut impl EncoderRx) -> i32 {
-        let mut count = None;
-        // TODO: use a match method here in order to avoid blocking
-        while let Some(val) = rx.read() {
-            count = Some(val as i32);
-        }
-        count.unwrap_or(0) // Note: In a real app, you'd store and return the last known value
-    }
-
-    pub fn get_counts(&mut self) -> (i32, i32) {
-        let left = Self::read_latest(&mut self.left_rx);
-        let right = Self::read_latest(&mut self.right_rx);
-        (-left, -right)
-    }
+    #[cfg(not(test))]
+    right_rx: Rx<(PIO0, hal::pio::SM1)>,
+    #[cfg(test)]
+    pub right_rx: MockRxHandle,
 }
 
 impl Encoders {
+    #[cfg(not(test))]
     pub fn new(
         pio: &mut PIO<PIO0>,
         sm0: UninitStateMachine<(PIO0, hal::pio::SM0)>,
@@ -135,33 +131,56 @@ impl Encoders {
         info!("Encoders (HW): Starting PIO state machines at offset {}", installed.offset());
         
         Self {
-            _keep_alive: EncodersKeepAlive {
-                _program: installed,
-                _left_sm: left_sm.start(),
-                _right_sm: right_sm.start(),
-            },
+            _program: installed,
+            _left_sm: left_sm.start(),
+            _right_sm: right_sm.start(),
             left_rx,
             right_rx,
         }
     }
+
+    #[cfg(test)]
+    pub fn new_test() -> Self {
+        Self {
+            left_rx: MockRxHandle::new(),
+            right_rx: MockRxHandle::new(),
+        }
+    }
+
+    /// Read the latest count from the PIO.
+    /// This is non-blocking and returns the most recent value in the FIFO.
+    fn read_latest(rx: &mut impl EncoderRx) -> i32 {
+        let mut count = None;
+        // TODO: use a match method here in order to avoid blocking
+        while let Some(val) = rx.read() {
+            count = Some(val as i32);
+        }
+        count.unwrap_or(0) // Note: In a real app, you'd store and return the last known value
+    }
+
+    pub fn get_counts(&mut self) -> (i32, i32) {
+        let left = Self::read_latest(&mut self.left_rx);
+        let right = Self::read_latest(&mut self.right_rx);
+        (-left, -right)
+    }
 }
 
 #[cfg(test)]
-mod tests {
+pub mod mocks {
     use super::*;
     use std::cell::RefCell;
     use std::rc::Rc;
     use std::collections::VecDeque;
 
     #[derive(Clone)]
-    struct MockRxHandle(Rc<RefCell<VecDeque<u32>>>);
+    pub struct MockRxHandle(pub Rc<RefCell<VecDeque<u32>>>);
 
     impl MockRxHandle {
-        fn new() -> Self {
+        pub fn new() -> Self {
             Self(Rc::new(RefCell::new(VecDeque::new())))
         }
 
-        fn push(&self, value: u32) {
+        pub fn push(&self, value: u32) {
             self.0.borrow_mut().push_back(value);
         }
     }
@@ -171,17 +190,17 @@ mod tests {
             self.0.borrow_mut().pop_front()
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 
     #[test]
     fn test_get_counts() {
-        let left_rx = MockRxHandle::new();
-        let right_rx = MockRxHandle::new();
-
-        let mut encoders = GenericEncoders {
-            left_rx: left_rx.clone(),
-            right_rx: right_rx.clone(),
-            _keep_alive: (),
-        };
+        let mut encoders = Encoders::new_test();
+        let left_rx = encoders.left_rx.clone();
+        let right_rx = encoders.right_rx.clone();
 
         // Nothing to read
         let (left, right) = encoders.get_counts();

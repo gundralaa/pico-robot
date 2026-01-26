@@ -1,8 +1,12 @@
 use rp2040_hal as hal;
 use hal::pwm::{Pwm7, Slice, FreeRunning};
+#[cfg(not(test))]
 use hal::gpio::{Pin, FunctionSio, SioOutput, PullDown, bank0::{Gpio10, Gpio11}};
 use embedded_hal::PwmPin;
 use embedded_hal::digital::v2::OutputPin;
+
+#[cfg(test)]
+use self::mocks::{MockPwmHandle, MockPinHandle};
 
 pub enum MotorId {
     Left,
@@ -31,19 +35,29 @@ impl PwmSlice for Slice<Pwm7, FreeRunning> {
     }
 }
 
-pub struct GenericMotors<P, L, R> {
-    pwm: P,
-    left_dir: L,
-    right_dir: R,
+pub struct Motors {
+    #[cfg(not(test))]
+    pwm: Slice<Pwm7, FreeRunning>,
+    #[cfg(test)]
+    pub pwm: MockPwmHandle,
+
+    #[cfg(not(test))]
+    left_dir: Pin<Gpio11, FunctionSio<SioOutput>, PullDown>,
+    #[cfg(test)]
+    pub left_dir: MockPinHandle,
+
+    #[cfg(not(test))]
+    right_dir: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
+    #[cfg(test)]
+    pub right_dir: MockPinHandle,
 }
 
-pub type Motors = GenericMotors<Slice<Pwm7, FreeRunning>, Pin<Gpio11, FunctionSio<SioOutput>, PullDown>, Pin<Gpio10, FunctionSio<SioOutput>, PullDown>>;
-
-impl<P: PwmSlice, L: OutputPin, R: OutputPin> GenericMotors<P, L, R> {
+impl Motors {
+    #[cfg(not(test))]
     pub fn new(
-        mut pwm: P,
-        left_dir: L,
-        right_dir: R,
+        mut pwm: Slice<Pwm7, FreeRunning>,
+        left_dir: Pin<Gpio11, FunctionSio<SioOutput>, PullDown>,
+        right_dir: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
     ) -> Self {
         // Initialize PWM channels
         pwm.set_ph_correct();
@@ -55,6 +69,22 @@ impl<P: PwmSlice, L: OutputPin, R: OutputPin> GenericMotors<P, L, R> {
             right_dir,
         };
         
+        m.stop();
+        m
+    }
+
+    #[cfg(test)]
+    pub fn new_test() -> Self {
+        let mut pwm = MockPwmHandle::new();
+        // Initialize as in real new()
+        pwm.set_ph_correct();
+        pwm.enable();
+
+        let mut m = Self {
+            pwm,
+            left_dir: MockPinHandle::new(),
+            right_dir: MockPinHandle::new(),
+        };
         m.stop();
         m
     }
@@ -93,20 +123,20 @@ impl<P: PwmSlice, L: OutputPin, R: OutputPin> GenericMotors<P, L, R> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod mocks {
     use super::*;
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    struct MockPwm {
-        duty_a: u16,
-        duty_b: u16,
-        ph_correct: bool,
-        enabled: bool,
+    pub struct MockPwm {
+        pub duty_a: u16,
+        pub duty_b: u16,
+        pub ph_correct: bool,
+        pub enabled: bool,
     }
 
     impl MockPwm {
-        fn new() -> Self {
+        pub fn new() -> Self {
             Self {
                 duty_a: 0,
                 duty_b: 0,
@@ -117,10 +147,10 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct MockPwmHandle(Rc<RefCell<MockPwm>>);
+    pub struct MockPwmHandle(pub Rc<RefCell<MockPwm>>);
 
     impl MockPwmHandle {
-        fn new() -> Self {
+        pub fn new() -> Self {
             Self(Rc::new(RefCell::new(MockPwm::new())))
         }
     }
@@ -140,21 +170,21 @@ mod tests {
         }
     }
 
-    struct MockPin {
-        high: bool,
+    pub struct MockPin {
+        pub high: bool,
     }
 
     impl MockPin {
-        fn new() -> Self {
+        pub fn new() -> Self {
             Self { high: false }
         }
     }
 
     #[derive(Clone)]
-    struct MockPinHandle(Rc<RefCell<MockPin>>);
+    pub struct MockPinHandle(pub Rc<RefCell<MockPin>>);
 
     impl MockPinHandle {
-        fn new() -> Self {
+        pub fn new() -> Self {
             Self(Rc::new(RefCell::new(MockPin::new())))
         }
     }
@@ -170,56 +200,49 @@ mod tests {
             Ok(())
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 
     #[test]
     fn test_motors_initialization() {
-        let pwm = MockPwmHandle::new();
-        let left = MockPinHandle::new();
-        let right = MockPinHandle::new();
+        let motors = Motors::new_test();
 
-        let _motors = GenericMotors::new(pwm.clone(), left.clone(), right.clone());
-
-        assert!(pwm.0.borrow().ph_correct);
-        assert!(pwm.0.borrow().enabled);
-        assert_eq!(pwm.0.borrow().duty_a, 0); // stop() called in new
-        assert_eq!(pwm.0.borrow().duty_b, 0);
+        assert!(motors.pwm.0.borrow().ph_correct);
+        assert!(motors.pwm.0.borrow().enabled);
+        assert_eq!(motors.pwm.0.borrow().duty_a, 0); // stop() called in new
+        assert_eq!(motors.pwm.0.borrow().duty_b, 0);
     }
 
     #[test]
     fn test_set_speed_left() {
-        let pwm = MockPwmHandle::new();
-        let left = MockPinHandle::new();
-        let right = MockPinHandle::new();
-
-        let mut motors = GenericMotors::new(pwm.clone(), left.clone(), right.clone());
+        let mut motors = Motors::new_test();
 
         // Forward
         motors.set_speed(MotorId::Left, 0.5);
-        assert!(left.0.borrow().high);
-        assert_eq!(pwm.0.borrow().duty_b, 32767); // 0.5 * 65535
+        assert!(motors.left_dir.0.borrow().high);
+        assert_eq!(motors.pwm.0.borrow().duty_b, 32767); // 0.5 * 65535
 
         // Backward
         motors.set_speed(MotorId::Left, -0.5);
-        assert!(!left.0.borrow().high);
-        assert_eq!(pwm.0.borrow().duty_b, 32767);
+        assert!(!motors.left_dir.0.borrow().high);
+        assert_eq!(motors.pwm.0.borrow().duty_b, 32767);
     }
 
     #[test]
     fn test_set_speed_right() {
-        let pwm = MockPwmHandle::new();
-        let left = MockPinHandle::new();
-        let right = MockPinHandle::new();
-
-        let mut motors = GenericMotors::new(pwm.clone(), left.clone(), right.clone());
+        let mut motors = Motors::new_test();
 
         // Forward
         motors.set_speed(MotorId::Right, 0.5);
-        assert!(right.0.borrow().high);
-        assert_eq!(pwm.0.borrow().duty_a, 32767); // 0.5 * 65535
+        assert!(motors.right_dir.0.borrow().high);
+        assert_eq!(motors.pwm.0.borrow().duty_a, 32767); // 0.5 * 65535
 
         // Backward
         motors.set_speed(MotorId::Right, -0.5);
-        assert!(!right.0.borrow().high);
-        assert_eq!(pwm.0.borrow().duty_a, 32767);
+        assert!(!motors.right_dir.0.borrow().high);
+        assert_eq!(motors.pwm.0.borrow().duty_a, 32767);
     }
 }
