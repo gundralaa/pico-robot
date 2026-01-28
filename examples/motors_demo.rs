@@ -65,13 +65,6 @@ mod app {
         let _ = pins.gpio14.into_function::<hal::gpio::FunctionPwm>();
         let _ = pins.gpio15.into_function::<hal::gpio::FunctionPwm>();
 
-        // Fix: Prevent LEDs from flashing due to floating pins picking up motor noise
-        // GP6 is RGB LED Clock, GP3 is RGB LED Data
-        let mut led_clock = pins.gpio6.into_push_pull_output();
-        let mut led_data = pins.gpio3.into_push_pull_output();
-        let _ = led_clock.set_low();
-        let _ = led_data.set_low();
-
         // Configure Direction pins
         // GP10 -> Right Motor Dir
         // GP11 -> Left Motor Dir
