@@ -47,7 +47,27 @@ cargo run --release --example <example_name>
 | `leds_off` | Utility to turn off all RGB LEDs |
 | `display_demo` | Using the OLED display with `embedded-graphics` |
 | `imu_demo` | Reading data from the onboard IMU |
+| `uart_echo_demo` | Echoes characters received on UART0 (GP28/GP29) |
 | `blink_led` | Basic blinky example (migrated from main) |
+
+## Testing UART Echo
+
+To test the `uart_echo_demo`, you will need a USB-to-TTL serial adapter connected to the robot's UART pins (**GP28/TX** and **GP29/RX**).
+
+1.  **Connect the Adapter:**
+    -   Adapter RX -> Robot GP28 (TX)
+    -   Adapter TX -> Robot GP29 (RX)
+    -   Adapter GND -> Robot GND
+2.  **Flash the Demo:**
+    ```bash
+    cargo run --release --example uart_echo_demo
+    ```
+3.  **Connect using `screen`:**
+    Identify your serial device (e.g., `/dev/tty.usbserial-XYZ`) and run:
+    ```bash
+    screen /dev/tty.<your_serial_device> 115200
+    ```
+    *To exit screen, press `Ctrl+A` then `K` then `Y`.*
 
 ## Hardware Modules
 
