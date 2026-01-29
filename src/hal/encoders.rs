@@ -9,7 +9,7 @@ pub enum MotorId {
     Left,
     Right,
 }
-
+    
 pub struct Encoders {
     _program: InstalledProgram<PIO0>,
     _left_sm: StateMachine<(PIO0, hal::pio::SM0), hal::pio::Running>,
@@ -108,15 +108,12 @@ impl Encoders {
         }
     }
 
-    /// Read the latest count from the PIO. 
-    /// This is non-blocking and returns the most recent value in the FIFO.
     fn read_latest<T: ValidStateMachine>(rx: &mut Rx<T>) -> i32 {
         let mut count = None;
-        // TODO: use a match method here in order to avoid blocking
         while let Some(val) = rx.read() {
             count = Some(val as i32);
         }
-        count.unwrap_or(0) // Note: In a real app, you'd store and return the last known value
+        count.unwrap_or(0)
     }
 
     pub fn get_counts(&mut self) -> (i32, i32) {
